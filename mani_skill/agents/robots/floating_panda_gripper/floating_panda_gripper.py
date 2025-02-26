@@ -55,7 +55,7 @@ class FloatingPandaGripper(BaseAgent):
     ]
     gripper_stiffness = 1e3
     gripper_damping = 1e2
-    gripper_force_limit = 100
+    gripper_force_limit = 1000
 
     ee_link_name = "panda_hand_tcp"
 

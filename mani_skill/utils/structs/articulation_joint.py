@@ -179,6 +179,16 @@ class ArticulationJoint(BaseStruct[physx.PhysxArticulationJoint]):
     ):
         for joint in self._objs:
             joint.set_drive_properties(stiffness, damping, force_limit, mode)
+        
+    def set_drive_properties_heterogeneous(
+        self,
+        stiffness: torch.Tensor,
+        damping: torch.Tensor,
+        force_limit: float = 3.4028234663852886e38,
+        mode: typing.Literal["force", "acceleration"] = "force",
+    ):
+        for i, joint in enumerate(self._objs):
+            joint.set_drive_properties(stiffness[i], damping[i], force_limit, mode)
 
     def set_drive_target(self, target: Array) -> None:
         self.drive_target = target

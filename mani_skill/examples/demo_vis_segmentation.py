@@ -60,9 +60,12 @@ color_pallete = np.array([[164,74,82],
 from mani_skill.envs.sapien_env import BaseEnv
 from mani_skill.sensors.camera import Camera
 from mani_skill.utils.structs import Actor, Link
+
+import environments
+
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--env-id", type=str, default="PushCube-v1", help="The environment ID of the task you want to simulate")
+    parser.add_argument("-e", "--env-id", type=str, default="SegmentationSetup-v1", help="The environment ID of the task you want to simulate")
     parser.add_argument("--id", type=str, help="The ID or name of actor you want to segment and render")
     parser.add_argument("--num-envs", type=int, default=1, help="Number of environments to run. Used for some basic testing and not visualized")
     parser.add_argument("--cam-width", type=int, help="Override the width of every camera in the environment")
@@ -119,8 +122,8 @@ def main(args):
 
     renderer = visualization.ImageRenderer()
     while True:
-        action = env.action_space.sample()
-        obs, reward, terminated, truncated, info = env.step(action)
+        # action = env.action_space.sample()
+        obs, reward, terminated, truncated, info = env.step(None)
         cam_num = 0
         imgs=[]
         for cam in obs["sensor_data"].keys():

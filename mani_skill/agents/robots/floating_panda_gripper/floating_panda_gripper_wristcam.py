@@ -27,5 +27,6 @@ class FloatingPandaGripperWristcam(FloatingPandaGripper):
                 near=0.01,
                 far=100,
                 mount=self.robot.links_map["camera_link"],
+                shader_pack="rt-fast"
             )
         ]

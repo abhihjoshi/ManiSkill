@@ -179,6 +179,16 @@ class ArticulationJoint(BaseStruct[physx.PhysxArticulationJoint]):
     ):
         for joint in self._objs:
             joint.set_drive_properties(stiffness, damping, force_limit, mode)
+        
+    def set_drive_properties_heterogeneous(
+        self,
+        stiffness: torch.Tensor,
+        damping: torch.Tensor,
+        force_limit: float = 3.4028234663852886e38,
+        mode: typing.Literal["force", "acceleration"] = "force",
+    ):
+        for i, joint in enumerate(self._objs):
+            joint.set_drive_properties(stiffness[i], damping[i], force_limit, mode)
 
     def set_drive_target(self, target: Array) -> None:
         self.drive_target = target
@@ -237,9 +247,11 @@ class ArticulationJoint(BaseStruct[physx.PhysxArticulationJoint]):
     def drive_target(self, arg1: Array) -> None:
         arg1 = common.to_tensor(arg1, device=self.device)
         if self.scene.gpu_sim_enabled:
-            raise NotImplementedError(
-                "Setting drive targets of individual joints is not implemented yet."
-            )
+            if arg1.shape == ():
+                arg1 = arg1.reshape(
+                    1,
+                )
+            self._objs[0].drive_target = arg1.cpu().numpy()
         else:
             if arg1.shape == ():
                 arg1 = arg1.reshape(

@@ -30,11 +30,16 @@ class TableSceneBuilder(SceneBuilder):
         # )
         builder.add_box_collision(
             pose=sapien.Pose(p=[0, 0, 0.9196429 / 2]),
-            half_size=(2.418 / 2, 1.209 / 2, 0.9196429 / 2),
+            half_size=(1, 1, 0.9196429 / 2),
         )
-        builder.add_visual_from_file(
-            filename=table_model_file, scale=[scale] * 3, pose=table_pose
+        builder.add_box_visual(
+            pose=sapien.Pose(p=[0, 0, 0.9196429 / 2]),
+            half_size=(1, 1, 0.9196429 / 2),
+            material=sapien.render.RenderMaterial(base_color=[1, 1, 1, 1])
         )
+        # builder.add_visual_from_file(
+        #     filename=table_model_file, scale=[scale] * 3, pose=table_pose
+        # )
         builder.initial_pose = sapien.Pose(
             p=[-0.12, 0, -0.9196429], q=euler2quat(0, 0, np.pi / 2)
         )

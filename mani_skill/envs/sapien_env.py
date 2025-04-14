@@ -1123,6 +1123,7 @@ class BaseEnv(gym.Env):
         self._human_render_cameras = dict()
         self.scene = None
         self._hidden_objects = []
+        sapien.render.clear_cache()
         gc.collect() # force gc to collect which releases most GPU memory
 
     def close(self):

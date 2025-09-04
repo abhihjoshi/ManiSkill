@@ -20,6 +20,23 @@ from mani_skill.utils.registration import register_env
 from mani_skill.utils.structs import Articulation, Link, Pose
 from mani_skill.utils.structs.types import GPUMemoryConfig, SimConfig
 
+from pathlib import Path
+from mani_skill.agents.robots.fetch.fetch import Fetch
+from mani_skill.agents.robots.panda.panda import Panda
+from mani_skill.envs.sapien_env import BaseEnv
+from mani_skill.sensors.camera import CameraConfig
+from mani_skill.utils import sapien_utils
+from mani_skill.utils.building.ground import build_ground
+from mani_skill.utils.registration import register_env
+from mani_skill.utils.structs.types import GPUMemoryConfig, SimConfig
+from mani_skill.envs.utils import randomization
+from mani_skill.utils.structs.pose import Pose
+from sapien.physx import PhysxRigidBodyComponent
+from sapien.render import RenderBodyComponent
+from sapien.pysapien.render import RenderTexture2D
+from mani_skill.utils.building import actors
+import json
+
 CABINET_COLLISION_BIT = 29
 
 
@@ -78,6 +95,16 @@ class OpenCabinetDrawerEnv(BaseEnv):
                 reconfiguration_freq = 1
             else:
                 reconfiguration_freq = 0
+                
+        urdf = Path("/home/abhishek/Documents/pvl/infinigen/infinigen_sim/sim_exports/urdf/dummy_oven_2/0/dummy_oven_2.urdf")
+        self.urdf = urdf
+        # get the bounding box of the asset
+        with open(Path(urdf.parent) / "metadata.json") as f:
+            self.metadata = json.load(f)
+        self.bbox_min = self.metadata["bounding_box"]["min"]
+        self.bbox_max = self.metadata["bounding_box"]["max"]
+        self.bbox_center = [(self.bbox_max[i] + self.bbox_min[i]) / 2 for i in range(3)]
+
         super().__init__(
             *args,
             robot_uids=robot_uids,
@@ -108,13 +135,17 @@ class OpenCabinetDrawerEnv(BaseEnv):
 
     def _load_agent(self, options: dict):
         super()._load_agent(options, sapien.Pose(p=[1, 0, 0]))
+    
+    def _load_lighting(self, options: dict):
+        self.scene.ambient_light = [1, 1, 1]
 
     def _load_scene(self, options: dict):
         self.ground = build_ground(self.scene)
         # temporarily turn off the logging as there will be big red warnings
         # about the cabinets having oblong meshes which we ignore for now.
         sapien.set_log_level("off")
-        self._load_cabinets(self.handle_types)
+        # self._load_cabinets(self.handle_types)
+        self._load_oven()
         sapien.set_log_level("warn")
         from mani_skill.agents.robots.fetch import FETCH_WHEELS_COLLISION_BIT
 
@@ -124,6 +155,47 @@ class OpenCabinetDrawerEnv(BaseEnv):
         self.ground.set_collision_group_bit(
             group=2, bit_idx=CABINET_COLLISION_BIT, bit=1
         )
+
+    def _load_oven(self):
+        loader = self.scene.create_urdf_loader()
+        loader.fix_root_link = True
+        loader.disable_self_collisions = True
+        loader.load_multiple_collisions_from_file = False
+
+        p = [-x for x in self.bbox_center]
+        p[0] += 0.4
+        p[2] = -self.bbox_min[2]
+
+        articulation_builders = loader.parse(str(self.urdf))["articulation_builders"]
+        builder = articulation_builders[0]
+        builder.initial_pose = sapien.Pose(p=p, q=[0, 0, 0, 1])
+
+        # build the asset
+        self.asset = builder.build(name=f"asset")
+
+        for link in self.asset.get_links():
+            textures_dir = self.urdf.parent / "assets/textures"
+            for obj in link._objs:
+                component = obj.entity.find_component_by_type(
+                    sapien.render.RenderBodyComponent
+                )
+                if component is None:
+                    continue
+                for s in component.render_shapes:
+                    if type(s) == sapien.render.RenderShapeTriangleMesh:
+                        for part in s.parts:
+                            normal_path = textures_dir / f"{link.name}_NORMAL.png"
+                            roughness_path = textures_dir / f"{link.name}_ROUGHNESS.png"
+                            metal_path = textures_dir / f"{link.name}_METAL.png"
+                            transmission_path = textures_dir / f"{link.name}_TRANSMISSION.png"
+                            if normal_path.exists():
+                                part.material.set_normal_texture(RenderTexture2D(str(normal_path)))
+                            if roughness_path.exists():
+                                part.material.set_roughness_texture(RenderTexture2D(str(roughness_path)))
+                            if metal_path.exists():
+                                part.material.set_metallic_texture(RenderTexture2D(str(metal_path)))
+                            if transmission_path.exists():
+                                part.material.set_transmission_texture(RenderTexture2D(str(transmission_path)))
 
     def _load_cabinets(self, joint_types: List[str]):
         # we sample random cabinet model_ids with numpy as numpy is always deterministic based on seed, regardless of
@@ -207,35 +279,37 @@ class OpenCabinetDrawerEnv(BaseEnv):
 
         # this code is in _after_reconfigure since retrieving collision meshes requires the GPU to be initialized
         # which occurs after the initial reconfigure call (after self._load_scene() is called)
-        self.cabinet_zs = []
-        for cabinet in self._cabinets:
-            collision_mesh = cabinet.get_first_collision_mesh()
-            self.cabinet_zs.append(-collision_mesh.bounding_box.bounds[0, 2])
-        self.cabinet_zs = common.to_tensor(self.cabinet_zs, device=self.device)
+        # self.cabinet_zs = []
+        # for cabinet in self._cabinets:
+        #     collision_mesh = cabinet.get_first_collision_mesh()
+        #     self.cabinet_zs.append(-collision_mesh.bounding_box.bounds[0, 2])
+        # self.cabinet_zs = common.to_tensor(self.cabinet_zs, device=self.device)
 
-        # get the qmin qmax values of the joint corresponding to the selected links
-        target_qlimits = self.handle_link.joint.limits  # [b, 1, 2]
-        qmin, qmax = target_qlimits[..., 0], target_qlimits[..., 1]
-        self.target_qpos = qmin + (qmax - qmin) * self.min_open_frac
+        # # get the qmin qmax values of the joint corresponding to the selected links
+        # target_qlimits = self.handle_link.joint.limits  # [b, 1, 2]
+        # qmin, qmax = target_qlimits[..., 0], target_qlimits[..., 1]
+        # self.target_qpos = qmin + (qmax - qmin) * self.min_open_frac
+        pass
 
     def handle_link_positions(self, env_idx: Optional[torch.Tensor] = None):
-        if env_idx is None:
-            return transform_points(
-                self.handle_link.pose.to_transformation_matrix().clone(),
-                common.to_tensor(self.handle_link_pos, device=self.device),
-            )
-        return transform_points(
-            self.handle_link.pose[env_idx].to_transformation_matrix().clone(),
-            common.to_tensor(self.handle_link_pos[env_idx], device=self.device),
-        )
+        # if env_idx is None:
+        #     return transform_points(
+        #         self.handle_link.pose.to_transformation_matrix().clone(),
+        #         common.to_tensor(self.handle_link_pos, device=self.device),
+        #     )
+        # return transform_points(
+        #     self.handle_link.pose[env_idx].to_transformation_matrix().clone(),
+        #     common.to_tensor(self.handle_link_pos[env_idx], device=self.device),
+        # )
+        pass
 
     def _initialize_episode(self, env_idx: torch.Tensor, options: dict):
 
         with torch.device(self.device):
             b = len(env_idx)
             xy = torch.zeros((b, 3))
-            xy[:, 2] = self.cabinet_zs[env_idx]
-            self.cabinet.set_pose(Pose.create_from_pq(p=xy))
+            # xy[:, 2] = self.cabinet_zs[env_idx]
+            # self.cabinet.set_pose(Pose.create_from_pq(p=xy))
 
             # initialize robot
             if self.robot_uids == "fetch":
@@ -273,23 +347,23 @@ class OpenCabinetDrawerEnv(BaseEnv):
                 self.agent.robot.set_qpos(qpos)
                 self.agent.robot.set_pose(sapien.Pose())
             # close all the cabinets. We know beforehand that lower qlimit means "closed" for these assets.
-            qlimits = self.cabinet.get_qlimits()  # [b, self.cabinet.max_dof, 2])
-            self.cabinet.set_qpos(qlimits[env_idx, :, 0])
-            self.cabinet.set_qvel(self.cabinet.qpos[env_idx] * 0)
+            # qlimits = self.cabinet.get_qlimits()  # [b, self.cabinet.max_dof, 2])
+            # self.cabinet.set_qpos(qlimits[env_idx, :, 0])
+            # self.cabinet.set_qvel(self.cabinet.qpos[env_idx] * 0)
 
-            # NOTE (stao): This is a temporary work around for the issue where the cabinet drawers/doors might open
-            # themselves on the first step. It's unclear why this happens on GPU sim only atm.
-            # moreover despite setting qpos/qvel to 0, the cabinets might still move on their own a little bit.
-            # this may be due to oblong meshes.
-            if self.gpu_sim_enabled:
-                self.scene._gpu_apply_all()
-                self.scene.px.gpu_update_articulation_kinematics()
-                self.scene.px.step()
-                self.scene._gpu_fetch_all()
+        #     # NOTE (stao): This is a temporary work around for the issue where the cabinet drawers/doors might open
+        #     # themselves on the first step. It's unclear why this happens on GPU sim only atm.
+        #     # moreover despite setting qpos/qvel to 0, the cabinets might still move on their own a little bit.
+        #     # this may be due to oblong meshes.
+        #     if self.gpu_sim_enabled:
+        #         self.scene._gpu_apply_all()
+        #         self.scene.px.gpu_update_articulation_kinematics()
+        #         self.scene.px.step()
+        #         self.scene._gpu_fetch_all()
 
-            self.handle_link_goal.set_pose(
-                Pose.create_from_pq(p=self.handle_link_positions(env_idx))
-            )
+        #     self.handle_link_goal.set_pose(
+        #         Pose.create_from_pq(p=self.handle_link_positions(env_idx))
+        #     )
 
     def _after_control_step(self):
         # after each control step, we update the goal position of the handle link
@@ -308,16 +382,19 @@ class OpenCabinetDrawerEnv(BaseEnv):
         # even though self.handle_link is a different link across different articulations
         # we can still fetch a joint that represents the parent joint of all those links
         # and easily get the qpos value.
-        open_enough = self.handle_link.joint.qpos >= self.target_qpos
-        handle_link_pos = self.handle_link_positions()
+        # open_enough = self.handle_link.joint.qpos >= self.target_qpos
+        # handle_link_pos = self.handle_link_positions()
 
-        link_is_static = (
-            torch.linalg.norm(self.handle_link.angular_velocity, axis=1) <= 1
-        ) & (torch.linalg.norm(self.handle_link.linear_velocity, axis=1) <= 0.1)
+        # link_is_static = (
+        #     torch.linalg.norm(self.handle_link.angular_velocity, axis=1) <= 1
+        # ) & (torch.linalg.norm(self.handle_link.linear_velocity, axis=1) <= 0.1)
+        # return {
+        #     "success": open_enough & link_is_static,
+        #     "handle_link_pos": handle_link_pos,
+        #     "open_enough": open_enough,
+        # }
         return {
-            "success": open_enough & link_is_static,
-            "handle_link_pos": handle_link_pos,
-            "open_enough": open_enough,
+            "success": False
         }
 
     def _get_obs_extra(self, info: Dict):
@@ -325,12 +402,12 @@ class OpenCabinetDrawerEnv(BaseEnv):
             tcp_pose=self.agent.tcp.pose.raw_pose,
         )
 
-        if "state" in self.obs_mode:
-            obs.update(
-                tcp_to_handle_pos=info["handle_link_pos"] - self.agent.tcp.pose.p,
-                target_link_qpos=self.handle_link.joint.qpos,
-                target_handle_pos=info["handle_link_pos"],
-            )
+        # if "state" in self.obs_mode:
+        #     obs.update(
+        #         tcp_to_handle_pos=info["handle_link_pos"] - self.agent.tcp.pose.p,
+        #         target_link_qpos=self.handle_link.joint.qpos,
+        #         target_handle_pos=info["handle_link_pos"],
+        #     )
         return obs
 
     def compute_dense_reward(self, obs: Any, action: torch.Tensor, info: Dict):
@@ -355,8 +432,8 @@ class OpenCabinetDrawerEnv(BaseEnv):
         self, obs: Any, action: torch.Tensor, info: Dict
     ):
         max_reward = 5.0
-        return self.compute_dense_reward(obs=obs, action=action, info=info) / max_reward
-
+        # return self.compute_dense_reward(obs=obs, action=action, info=info) / max_reward
+        return 0
 
 @register_env("OpenCabinetDoor-v1", max_episode_steps=100)
 class OpenCabinetDoorEnv(OpenCabinetDrawerEnv):

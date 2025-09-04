@@ -176,19 +176,14 @@ class ArticulationJoint(BaseStruct[physx.PhysxArticulationJoint]):
         damping: float,
         force_limit: float = 3.4028234663852886e38,
         mode: typing.Literal["force", "acceleration"] = "force",
+        env_idx: Optional[torch.Tensor] = None
     ):
-        for joint in self._objs:
-            joint.set_drive_properties(stiffness, damping, force_limit, mode)
-        
-    def set_drive_properties_heterogeneous(
-        self,
-        stiffness: torch.Tensor,
-        damping: torch.Tensor,
-        force_limit: float = 3.4028234663852886e38,
-        mode: typing.Literal["force", "acceleration"] = "force",
-    ):
-        for i, joint in enumerate(self._objs):
-            joint.set_drive_properties(stiffness[i], damping[i], force_limit, mode)
+        if env_idx is not None: # temporary solution to different stiffness for each env
+            for i, joint in enumerate(self._objs):
+                joint.set_drive_properties(stiffness[i], damping, force_limit, mode)
+        else:
+            for joint in self._objs:
+                joint.set_drive_properties(stiffness, damping, force_limit, mode)
 
     def set_drive_target(self, target: Array) -> None:
         self.drive_target = target
@@ -246,12 +241,14 @@ class ArticulationJoint(BaseStruct[physx.PhysxArticulationJoint]):
     @drive_target.setter
     def drive_target(self, arg1: Array) -> None:
         arg1 = common.to_tensor(arg1, device=self.device)
+        assert (
+            self.active_index is not None
+        ), "Cannot set drive position targets of inactive joints"
         if self.scene.gpu_sim_enabled:
-            if arg1.shape == ():
-                arg1 = arg1.reshape(
-                    1,
-                )
-            self._objs[0].drive_target = arg1.cpu().numpy()
+            self.px.cuda_articulation_target_qpos.torch()[
+                self._data_index[self.scene._reset_mask[self._scene_idxs]],
+                self.active_index,
+            ] = arg1
         else:
             if arg1.shape == ():
                 arg1 = arg1.reshape(

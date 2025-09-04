@@ -178,9 +178,13 @@ class ArticulationJoint(BaseStruct[physx.PhysxArticulationJoint]):
         mode: typing.Literal["force", "acceleration"] = "force",
         env_idx: Optional[torch.Tensor] = None
     ):
+        # TEMP SOLUTIONS -- CLEAN UP LATER
         if env_idx is not None: # temporary solution to different stiffness for each env
             for i, joint in enumerate(self._objs):
                 joint.set_drive_properties(stiffness[i], damping, force_limit, mode)
+        elif isinstance(stiffness, torch.Tensor):
+            for i, joint in enumerate(self._objs):
+                joint.set_drive_properties(stiffness[i], damping[i], force_limit, mode)
         else:
             for joint in self._objs:
                 joint.set_drive_properties(stiffness, damping, force_limit, mode)

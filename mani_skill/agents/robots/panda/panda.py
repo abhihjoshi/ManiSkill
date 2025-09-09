@@ -19,7 +19,7 @@ class Panda(BaseAgent):
     urdf_path = f"{PACKAGE_ASSET_DIR}/robots/panda/panda_v2.urdf"
     urdf_config = dict(
         _materials=dict(
-            gripper=dict(static_friction=2.0, dynamic_friction=2.0, restitution=0.0)
+            gripper=dict(static_friction=100.0, dynamic_friction=100.0, restitution=0.0)
         ),
         link=dict(
             panda_leftfinger=dict(
@@ -255,13 +255,17 @@ class Panda(BaseAgent):
         rdirection = -self.finger2_link.pose.to_transformation_matrix()[..., :3, 1]
         langle = common.compute_angle_between(ldirection, l_contact_forces)
         rangle = common.compute_angle_between(rdirection, r_contact_forces)
+
+        # print("Force", lforce, rforce)
+        # print("Angle", langle, rangle)
+
         lflag = torch.logical_and(
             lforce >= min_force, torch.rad2deg(langle) <= max_angle
         )
         rflag = torch.logical_and(
             rforce >= min_force, torch.rad2deg(rangle) <= max_angle
         )
-        return torch.logical_and(lflag, rflag)
+        return torch.logical_or(lflag, rflag) # allows the robot to hook on to the handle with one gripper
 
     def is_static(self, threshold: float = 0.2):
         qvel = self.robot.get_qvel()[..., :-2]

@@ -265,7 +265,7 @@ class Panda(BaseAgent):
         rflag = torch.logical_and(
             rforce >= min_force, torch.rad2deg(rangle) <= max_angle
         )
-        return torch.logical_and(lflag, rflag) # allows the robot to hook on to the handle with one gripper
+        return torch.logical_or(lflag, rflag) # allows the robot to hook on to the handle with one gripper
 
     def is_static(self, threshold: float = 0.2):
         qvel = self.robot.get_qvel()[..., :-2]
